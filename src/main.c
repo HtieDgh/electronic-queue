@@ -11,7 +11,7 @@
 
 //////////////////////////////////////////////////////////////////////////
 //Константы
-	#define QUEUE_SIZE 35	//кол-во элементов в очереди
+	#define QUEUE_SIZE 40	//кол-во элементов в очереди
 	#define WORKERS_SIZE 8//Макс количество операторов
 	#define CATEGORY_SIZE 8 //Макс количество категорий
 
@@ -37,7 +37,6 @@
 	__code char sAdmWrongCatName[] = "Wrong Category Name\r";
 	__code char sWrongNum[] = "Wrong Number\r";
 	__code char sGotoWindow[] = " >>> ";
-	//Строки статуса должны помещатся в буфер
 	//Строки ниже имеют макс размер = 16-5-4-1-1 = 5 символов
 	__code char sStatus[4][12]={
 		" waiting",
@@ -59,7 +58,7 @@
 								// ее символ в очереди в формате ascii в имени позиции: X01
 								//                                            			^
 		} CT;
-		__idata CT CategoryTable[CATEGORY_SIZE]; //id категории = индексу в массиве
+		CT CategoryTable[CATEGORY_SIZE]; //id категории = индексу в массиве
 		__idata uint8_t catCount; // ограничивает текущее кол-во категорий в системе
 
 		//добавить имя к категории
@@ -110,7 +109,7 @@
 			uint8_t tail;
 			uint8_t count;
 		} QT;
-		QT QueueTable;
+		__idata QT QueueTable;
 		__idata Qelem elem; //буфер для чтения/записи очереди
 
 		// Инициализация/очистка очереди
@@ -423,20 +422,16 @@
 		RS=0;
 		RW=1;
 		
-		// Настраиваем порт данных на вход
 		lcd_port = 0xFF;  // Для 8051 - установка в 1 делает порт входом
 		
-		// Формируем строб чтения
+		// Послать короткий сигнал
 		E = 1;
 		__asm
 			nop
 			nop
 		__endasm; // Короткая задержка
-		busy_flag = lcd_port;      // Читаем данные
+		busy_flag = lcd_port;      // читать данные
 		E = 0;
-		
-		// Восстанавливаем порт данных на выход
-		lcd_port = 0x00;
 		
 		// BF находится в старшем бите (bit 7)
 		return (busy_flag & 0x80);
@@ -575,14 +570,14 @@ void adm_pause() __interrupt(0)  __critical
 	vt_clrscr();//очистка после вывода истории
 	KA=WELCOME;//продолжение работы (вызов прерывания)
 }
-// Зажигает индикатор занятости у работкника
+// Зажигает индикатор занятости у работника
 void led_busy_up(const uint8_t workerID)
 {
 	LEDmask=LED2reg;
 	LEDmask &= LEDgetMask(workerID);
 	LED_reload(LEDmask,1);
 }
-// Гасит индикатор занятости у работкника
+// Гасит индикатор занятости у работника
 void led_busy_down(const uint8_t workerID)
 {
 	LEDmask=LED2reg;
@@ -613,7 +608,7 @@ void btn_pressed() __interrupt(2)
 	
 	if(!wBusy && !wDeclineBtn && clIsWaiting)
 	{
-		//	Добавить id рабочего места к позииции в очереди
+		//	Добавить id рабочего места к позиции в очереди
 		// Сменить статус у текущей позиции в очереди на В обработке
 		QueueTable.el[i1].info = (keyCode << 5) | ( (WgetCatID(keyCode))<<2 ) | 0x01;
 		//Установить статус Занят
