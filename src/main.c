@@ -37,6 +37,7 @@
 	__code char sAdmWrongCatName[] = "Wrong Category Name\r";
 	__code char sWrongNum[] = "Wrong Number\r";
 	__code char sGotoWindow[] = " >>> ";
+	__code char sSetCallMethod[] = "Set client delayed call method?\r (y/n) -> ";
 	//Строки ниже имеют макс размер = 16-5-4-1-1 = 5 символов
 	__code char sStatus[4][12]={
 		" waiting",
@@ -83,13 +84,13 @@
 
 		//Перевод кол-ва заявок в номер идентификатора
 		void queue_elem_to_ascii(uint8_t clientInfo, uint8_t ClientNum){
-			i1 = ClientNum;
+			uint8_t tmp = ClientNum;
 			sLineBuffer[4]='\0';
-			sLineBuffer[3] = i1 % 10 + 0x30;
-			i1/=10;
-			sLineBuffer[2] = i1 % 10 + 0x30;
-			i1/=10;
-			sLineBuffer[1] = i1 % 10 + 0x30;
+			sLineBuffer[3] = tmp % 10 + 0x30;
+			tmp/=10;
+			sLineBuffer[2] = tmp % 10 + 0x30;
+			tmp/=10;
+			sLineBuffer[1] = tmp % 10 + 0x30;
 			sLineBuffer[0] = CgetName( (clientInfo >> 2) & 0x07 );	//первый символ идентификатора - имя (символ) категории
 		}
 
@@ -448,14 +449,23 @@
 		P3.2; приостановить работу очереди и показать историю обработок
 		P3.3; оператор нажал на кнопку, GS у шифратора отвечает за сигнал нажатия кнопки оператора
 */
+// хранит метод (моментальный / с задержкой) вызова клиента
+__bit clCallMethod;
 
 //Инициализация БД в начале работы
 void init_db(){
+	// Вызывать клиентов с задержкой?
+	putstring(sSetCallMethod);
+	vtin=getchar();
+	putchar(vtin); putchar('\r');
+    clCallMethod = (vtin == 'y');
+
+	// Инициализация Категорий
 	do{
-		//инициализация БД: вывод фразы для ввода кол-ва категорий
+		// вывод фразы для ввода кол-ва категорий
 		putstring(sEnterCat);
 
-		//Инициализация таблицы категории ввод количества категорий
+		// ввод количества категорий
 		vtin = getchar();
 		catCount = vtin-0x30;
 		if(catCount > CATEGORY_SIZE){
@@ -490,8 +500,8 @@ void init_db(){
 		vtin=getchar();
 		if(vtin!='='){
 			WorkerTable[i1]=CgetID(vtin);
-			//TODO
-			if(WorkerTable[i1] == catCount){//если такая категории не существует, то	
+
+			if(WorkerTable[i1] == catCount){//если такой категории не существует, то	
 								  //вывод сообщения и повтор инициализации текущего рабочего места
 				putstring(sAdmWrongCatName);
 				i1--;
@@ -584,6 +594,57 @@ void led_busy_down(const uint8_t workerID)
 	LEDmask |= ~(LEDgetMask(workerID));
 	LED_reload(LEDmask,1);
 }
+//Позвать клиента сразу по его id в очереди (талону).
+void lcd_client_call(uint8_t queueId, uint8_t workerId)
+{
+	queue_elem_to_ascii( QueueTable.el[queueId].info, QueueTable.el[queueId].num );
+		queueId=4;
+		while (sGotoWindow[sind])
+		{
+			sLineBuffer[queueId++]=sGotoWindow[sind++];
+		}
+		sLineBuffer[queueId++] = workerId + 0x30;
+		sLineBuffer[queueId]='\0';
+		sind=0;
+	//Вывести талон на lcd
+	lcd_add_line(sLineBuffer);
+}
+
+// Очищает экран lcd и выводит на lcd первые 4 талона клиентов у которых статус "в обработке"
+void lcd_print_first_four_clients()
+{
+	uint8_t i3;
+	uint8_t i4;
+	if(lcdLineNum==3) return;//Если lcd уже заполнен, то вызывать пока никого не надо
+	i2=0;
+
+	lcd_command(1);//очистка экрана
+	lcdLineNum=-1;
+	while (lcd_check());//ожидание конца выполнения очистки
+
+	for(i4=0;i4<4;i4++)
+	{
+		while (1)
+		{
+			if( !queue_seek( &QueueTable, i2++ ) ){
+				return;
+			}
+			if((elem.info & 0x3) == 1){ break; }
+		}
+		queue_elem_to_ascii( elem.info, elem.num );
+		i3=4;
+		while (sGotoWindow[sind])
+		{
+			sLineBuffer[i3++]=sGotoWindow[sind++];
+		}
+		sLineBuffer[i3++] = (elem.info>>5) + 0x30;
+		sLineBuffer[i3]='\0';
+		sind=0;
+		i3=0;
+		//Вывести талон на lcd
+		lcd_add_line(sLineBuffer);
+	}
+}
 
 __bit wActive;
 __bit wBusy;
@@ -608,25 +669,23 @@ void btn_pressed() __interrupt(2)
 	
 	if(!wBusy && !wDeclineBtn && clIsWaiting)
 	{
-		//	Добавить id рабочего места к позиции в очереди
+		// Добавить id рабочего места к позиции в очереди
 		// Сменить статус у текущей позиции в очереди на В обработке
 		QueueTable.el[i1].info = (keyCode << 5) | ( (WgetCatID(keyCode))<<2 ) | 0x01;
+
+		//Позвать клиента
+		if(clCallMethod){
+			lcd_print_first_four_clients();//Вызвать можно до 4 клиентов одновременно (кол-во строк в lcd)
+		}else{
+			lcd_client_call(i1,keyCode);
+		}
+
 		//Установить статус Занят
 		WorkerTable[ keyCode ] |= 0b01000000;
-		//Позвать клиента.
-			queue_elem_to_ascii( QueueTable.el[i1].info, QueueTable.el[i1].num );
-			i1=4;
-			while (sGotoWindow[sind])
-			{
-				sLineBuffer[i1++]=sGotoWindow[sind++];
-			}
-			sLineBuffer[i1++] = keyCode + 0x30;
-			sLineBuffer[i1]='\0';
-			sind=0;
-		//Вывести номер на lcd
-		lcd_add_line(sLineBuffer);
+
 		//зажечь индикатор занятости
 		led_busy_up(keyCode);
+
 		//Погасить лампы когда больше нет ожидающих клиентов
 		if( !queue_find(0, WgetCatID(keyCode), 0) )
 		{
@@ -644,16 +703,23 @@ void btn_pressed() __interrupt(2)
 	
 	//Работник обрабатывает заявку
 	queue_find( keyCode, WgetCatID(keyCode), 1);
-	QueueTable.el[i1].info += wDeclineBtn ? 2 : 1; //поставить статус "отменено"/"обработано"
-	
-	WorkerTable[ keyCode ] &= 0b10111111; //Установить статус свободен у рабочего места
+	QueueTable.el[i1].info += wDeclineBtn ? 2 : 1; // поставить статус "отменено"/"обработано"
+
+	// Обновить список вызовов, с учетом обработаного клиента в случае метода с задержкой
+	if(clCallMethod){
+		lcdLineNum--;// если lcdLineNum == 4 то вычитание 1 позволит запустить метод lcd_print_first_four_clients(). Теперь след клиенты будут вызваны.
+		lcd_print_first_four_clients();
+	}
+
+	WorkerTable[ keyCode ] &= 0b10111111; // установить статус свободен у рабочего места
 	// Погасить лампу
 	led_busy_down(keyCode);
 
+	// Если нет клиентов в очереди, то
 	if(!clIsWaiting)
 	{
 		LEDmask = LEDreg;
-		find_all_workers(WgetCatID(keyCode));//Для каждого найденного рабочего места в категории
+		find_all_workers(WgetCatID(keyCode));// для каждого найденного рабочего места в категории
 		for (i1=0; i1 < i2; i1++)
 		{
 			LEDmask |= ~( LEDgetMask(Res[i1]) ); // погасить лампу 
