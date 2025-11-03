@@ -37,7 +37,7 @@
 	__code char sAdmWrongCatName[] = "Wrong Category Name\r";
 	__code char sWrongNum[] = "Wrong Number\r";
 	__code char sGotoWindow[] = " >>> ";
-	__code char sSetCallMethod[] = "Set client delayed call method?\r (y/n) -> ";
+	__code char sSetCallMethod[] = "Set client delayed call method?\r(y/n) -> ";
 	//Строки ниже имеют макс размер = 16-5-4-1-1 = 5 символов
 	__code char sStatus[4][12]={
 		" waiting",
@@ -385,6 +385,9 @@
 		LCD_MORE(0b00001100); //Команда 00001110 (D = 1 Включить дисплей, C = 0 курсор выкл )
 
 		LCD_MORE(0b110);//команда 00000110 (ID = 1 Инкремент при записи S = 0 Окно при записи не сдвигается)
+		LCD_MORE(1);	//очистка экрана
+		lcdLineNum=-1;
+		while (lcd_check());//ожидание конца выполнения очистки
 	}
 
 	//Задержка после отправки. __naked упрощает накладные расходы на вызов функции [SDCC manual, p 49]
@@ -449,7 +452,7 @@
 		P3.2; приостановить работу очереди и показать историю обработок
 		P3.3; оператор нажал на кнопку, GS у шифратора отвечает за сигнал нажатия кнопки оператора
 */
-// хранит метод (моментальный / с задержкой) вызова клиента
+// хранит метод вызова клиента (моментальный / с задержкой)
 __bit clCallMethod;
 
 //Инициализация БД в начале работы
@@ -485,6 +488,7 @@ void init_db(){
 
 		vtin=getchar();
 		CategoryTable[i1].name=vtin;//ввод имени категории
+		CategoryTable[i1].count=0;
 		putchar(vtin); 
 		putchar('\r');
 	}
@@ -499,53 +503,46 @@ void init_db(){
 
 		vtin=getchar();
 		if(vtin!='='){
-			WorkerTable[i1]=CgetID(vtin);
+			WorkerTable[i1] = 0;
+			WorkerTable[i1] = CgetID(vtin);
 
 			if(WorkerTable[i1] == catCount){//если такой категории не существует, то	
-								  //вывод сообщения и повтор инициализации текущего рабочего места
-				putstring(sAdmWrongCatName);
+				putstring(sAdmWrongCatName); //вывод сообщения и повтор инициализации текущего рабочего места
 				i1--;
 				continue;
 			}
-			WorkerTable[i1]|=0x80;	//установка активного статуса рабочего места
+			WorkerTable[i1] |= 0x80;	//установка активного статуса рабочего места
 		}
 		putchar(vtin);
 		putchar('\r');
 	}
 
-	//Очистка экрана перед тем как начать работу
-	for(i1=0;i1<255;i1++)
-	{
-		putchar('\b');
-	}
+	queue_init(&QueueTable);		 // Очередь
 }
-
 
 
 void main(void)
 { 
-	
 //INIT
 	sind = 0;		 // индекс текущего символа в строках
-	lcdLineNum=-1; 	 // Первая операция - инкремент
 	lcd_init(); 	 // Инициализировать дисплей
-	LEDST=0;		 // Сброс управляющих битов лампочек
-	LED_reload(0xFF,0); //Выключить все лампочки
-	LED_reload(0xFF,1);
-	queue_init(&QueueTable);		 // Очередь
 	EX1 = 1;		 // Разрешить int1
 	EX0 = 1;  		 // Разрешить int0
 	IT1 = 1;		 // прерывания только по заднему фронту
 	IT0 = 1;		 
 	ES = 1;     	 // Разрешить прерывания от UART
 	P1 = 0b01001111; // Кнопки
-	
+	LED_reload(0xFF,0); //Выключить все лампочки
+	LED_reload(0xFF,1);
+
 	KA = WELCOME;	 // Начальное состояние автомата
 	// Инициализация таймера 1 режим 1 62500 baud
 	inituart(0xFF);  // Эта функция из библиотеки устанавливает флаг TI что в случае EA = 1 вызывает прерывание uart
-
+	
+	vt_clrscr();	 //очистка экрана после инициализации БД
 	init_db();       //инициализация БД
 	vt_clrscr();     //очистка экрана после инициализации БД
+	
 	EA=1;	         //Активация перываний 
 
 	while (1);       //конец программы, активное ожидание событий-прерываний
