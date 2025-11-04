@@ -482,13 +482,17 @@ void init_db(){
 	putchar('\r');
 	for(i1=0;i1<catCount;i1++)
 	{
-		putchar(i1+0x30);//вывод номера категории
+		putchar(i1+0x30);//вывод текущего индекса категории
 
 		putstring(sEnterSign);
-
 		vtin=getchar();
-		CategoryTable[i1].name=vtin;//ввод имени категории
-		CategoryTable[i1].count=0;
+		if( CgetID(vtin) != catCount){ // Проверка на уникальность имени Категории
+			putstring(sAdmWrongCatName); // Если такое имя уже есть, то назначать работнику ее нельзя
+			i1--;
+			continue;
+		}
+		CategoryTable[i1].name=vtin;//ввод имени категории в бд
+		CategoryTable[i1].count=0;  //обнуление после reset
 		putchar(vtin); 
 		putchar('\r');
 	}
@@ -502,12 +506,12 @@ void init_db(){
 		putstring(sEnterSign);
 
 		vtin=getchar();
+		WorkerTable[i1] = 0;//обнуление после reset
 		if(vtin!='='){
-			WorkerTable[i1] = 0;
 			WorkerTable[i1] = CgetID(vtin);
 
 			if(WorkerTable[i1] == catCount){//если такой категории не существует, то	
-				putstring(sAdmWrongCatName); //вывод сообщения и повтор инициализации текущего рабочего места
+				putstring(sAdmWrongCatName);//вывод сообщения и повтор инициализации текущего рабочего места
 				i1--;
 				continue;
 			}
@@ -517,7 +521,7 @@ void init_db(){
 		putchar('\r');
 	}
 
-	queue_init(&QueueTable);		 // Очередь
+	queue_init(&QueueTable);		 //инициализация очереди
 }
 
 
