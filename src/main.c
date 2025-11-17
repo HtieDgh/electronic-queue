@@ -38,6 +38,7 @@
 	__code char sWrongNum[] = "Wrong Number\r";
 	__code char sGotoWindow[] = " >>> ";
 	__code char sSetCallMethod[] = "Set client delayed call method?\r(y/n) -> ";
+	__code char sThereIsCatWithoutW[] = "There is Category without worker, try again\r";
 	//—троки ниже имеют макс размер = 16-5-4-1-1 = 5 символов
 	__code char sStatus[4][12]={
 		" waiting",
@@ -455,9 +456,11 @@
 */
 // хранит метод вызова клиента (моментальный / с задержкой)
 __bit clCallMethod;
+__bit WNotInitialised;
 
 //»нициализаци€ Ѕƒ в начале работы
 void init_db(){
+	char tmp=0;
 	// ¬ызывать клиентов с задержкой?
 	putstring(sSetCallMethod);
 	vtin=getchar();
@@ -497,31 +500,43 @@ void init_db(){
 		putchar(vtin); 
 		putchar('\r');
 	}
-	
 	//»нициализаци€ рабочих мест
-	putstring(sAdmEnterWorkers);
-
-	for(i1=0;i1<WORKERS_SIZE;i1++)
+	do
 	{
-		putchar(i1+0x30);//вывод номера рабочего места
-		putstring(sEnterSign);
+		tmp=0;
+		WNotInitialised=0;
+		putstring(sAdmEnterWorkers);
 
-		vtin=getchar();
-		WorkerTable[i1] = 0;//обнуление после reset
-		if(vtin!='='){
-			WorkerTable[i1] = CgetID(vtin);
+		for(i1=0;i1<WORKERS_SIZE;i1++)
+		{
+			putchar(i1+0x30);//вывод номера рабочего места
+			putstring(sEnterSign);
 
-			if(WorkerTable[i1] == catCount){//если такой категории не существует, то	
-				putstring(sAdmWrongCatName);//вывод сообщени€ и повтор инициализации текущего рабочего места
-				i1--;
-				continue;
+			vtin=getchar();
+			WorkerTable[i1] = 0;//обнуление после reset
+			if(vtin!='='){
+				WorkerTable[i1] = CgetID(vtin);
+
+				if(WorkerTable[i1] == catCount){//если такой категории не существует, то	
+					putstring(sAdmWrongCatName);//вывод сообщени€ и повтор инициализации текущего рабочего места
+					i1--;
+					continue;
+				}
+				WorkerTable[i1] |= 0x80;	//установка активного статуса рабочего места
 			}
-			WorkerTable[i1] |= 0x80;	//установка активного статуса рабочего места
+			putchar(vtin);
+			putchar('\r');
 		}
-		putchar(vtin);
-		putchar('\r');
-	}
-
+		
+		for(; tmp<catCount; tmp++){
+			if(find_all_workers(tmp)==0){
+				WNotInitialised=1;
+				vt_clrscr();
+				putstring(sThereIsCatWithoutW);
+			}
+		}
+	} while (WNotInitialised);
+	
 	queue_init(&QueueTable);		 //инициализаци€ очереди
 }
 
@@ -558,6 +573,7 @@ void main(void)
 // ѕрерывание int0, ќстановить работу системы и выдать историю очереди на экран virtual terminal
 void adm_pause() __interrupt(0)  __critical
 {
+	char tmp = QueueTable.count;
 	lcd_delay();
 	IE0=0;
 	TI=1;//этот сигнал нужен дл€ выполнени€ putchar(), getchar()
@@ -566,23 +582,26 @@ void adm_pause() __interrupt(0)  __critical
 	i2=0;
 	while (i2<QueueTable.count)
 	{
-		queue_elem_to_ascii( QueueTable.el[i2].info, QueueTable.el[i2].num );
+		queue_seek(&QueueTable, i2);
+		queue_elem_to_ascii( elem.info, elem.num );
 		putstring(sLineBuffer);
 		putstring(sGotoWindow);
 		putchar(
-			( (QueueTable.el[i2].info>>5) & 7 ) + 0x30
+			( (elem.info>>5) & 7 ) + 0x30
 		);
 
 		//вывод статуса
-		putstring(sStatus[QueueTable.el[i2].info & 3]);
+		putstring(sStatus[elem.info & 3]);
 		putchar('\r');
 		i2++;
 	}
 	getchar();//ожидание подтверждени€ от администратора
 	//очистка после вывода истории
-	for(i1=QueueTable.count; i1>0; i1/=10){
+	
+	for(; tmp>0; tmp-=10){
 		vt_clrscr();
 	}
+
 	KA=WELCOME;//продолжение работы (вызов прерывани€)
 }
 // «ажигает индикатор зан€тости у работника
